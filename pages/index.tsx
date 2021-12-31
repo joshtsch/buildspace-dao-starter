@@ -1,40 +1,40 @@
 import { useWeb3 } from "@3rdweb/hooks";
 import { ThirdwebSDK } from "@3rdweb/sdk";
+import { UnsupportedChainIdError } from "@web3-react/core";
 import { ethers } from "ethers";
 import type { NextPage } from "next";
 import { useEffect, useMemo, useState } from "react";
+import { DAOMembershipPage } from "../components/pages";
 
 const sdk = new ThirdwebSDK("rinkeby");
 
 interface HomePageProps {
   bundleDropAddress: string;
   tokenModuleAddress: string;
+  voteModuleAddress: string;
 }
 
 const Home: NextPage<HomePageProps> = ({
   bundleDropAddress,
   tokenModuleAddress,
+  voteModuleAddress,
 }) => {
   // Use the connectWallet hook thirdweb gives us.
   const { connectWallet, address, error, provider } = useWeb3();
   const [hasClaimedNFT, setHasClaimedNFT] = useState(false);
   const [isClaiming, setIsClaiming] = useState(false);
-
-  // Holds the amount of token each member has in state.
   const [memberTokenAmounts, setMemberTokenAmounts] = useState<any>({});
-  // The array holding all of our members addresses.
   const [memberAddresses, setMemberAddresses] = useState<string[]>([]);
+  const [proposals, setProposals] = useState<any[]>([]);
+  const [isVoting, setIsVoting] = useState(false);
+  const [hasVoted, setHasVoted] = useState(false);
 
   console.log("👋 Address:", address);
 
   const bundleDropModule = sdk.getBundleDropModule(bundleDropAddress);
   const tokenModule = sdk.getTokenModule(tokenModuleAddress);
   const signer = provider ? provider.getSigner() : undefined;
-
-  // A fancy function to shorten someones wallet address, no need to show the whole thing.
-  const shortenAddress = (str: string) => {
-    return str.substring(0, 6) + "..." + str.substring(str.length - 4);
-  };
+  const voteModule = sdk.getVoteModule(voteModuleAddress);
 
   // This useEffect grabs all our the addresses of our members holding our NFT.
   useEffect(() => {
@@ -88,6 +88,50 @@ const Home: NextPage<HomePageProps> = ({
     });
   }, [memberAddresses, memberTokenAmounts]);
 
+  // Retrieve all our existing proposals from the contract.
+  useEffect(() => {
+    if (!hasClaimedNFT) {
+      return;
+    }
+    // A simple call to voteModule.getAll() to grab the proposals.
+    voteModule
+      .getAll()
+      .then((proposals) => {
+        // Set state!
+        setProposals(proposals);
+        console.log("🌈 Proposals:", proposals);
+      })
+      .catch((err) => {
+        console.error("failed to get proposals", err);
+      });
+  }, [hasClaimedNFT, voteModule]);
+
+  // We also need to check if the user already voted.
+  useEffect(() => {
+    if (!hasClaimedNFT) {
+      return;
+    }
+
+    // If we haven't finished retrieving the proposals from the useEffect above
+    // then we can't check if the user voted yet!
+    if (!proposals.length) {
+      return;
+    }
+
+    // Check if the user has already voted on the first proposal.
+    voteModule
+      .hasVoted(proposals[0].proposalId, address)
+      .then((hasVoted) => {
+        setHasVoted(hasVoted);
+        if (hasVoted) {
+          console.log("🥵 User has already voted");
+        }
+      })
+      .catch((err) => {
+        console.error("failed to check if wallet has voted", err);
+      });
+  }, [hasClaimedNFT, proposals, address, voteModule]);
+
   useEffect(() => {
     // We pass the signer to the sdk, which enables us to interact with
     // our deployed contract!
@@ -119,6 +163,18 @@ const Home: NextPage<HomePageProps> = ({
       });
   }, [address, bundleDropModule]);
 
+  if (error instanceof UnsupportedChainIdError) {
+    return (
+      <div className="unsupported-network">
+        <h2>Please connect to Rinkeby</h2>
+        <p>
+          This dapp only works on the Rinkeby network, please switch networks in
+          your connected wallet.
+        </p>
+      </div>
+    );
+  }
+
   if (!address) {
     return (
       <div className="landing">
@@ -133,33 +189,17 @@ const Home: NextPage<HomePageProps> = ({
 
   if (hasClaimedNFT) {
     return (
-      <div className="member-page">
-        <h1>🍪DAO Member Page</h1>
-        <p>Congratulations on being a member</p>
-        <div>
-          <div>
-            <h2>Member List</h2>
-            <table className="card">
-              <thead>
-                <tr>
-                  <th>Address</th>
-                  <th>Token Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {memberList.map((member) => {
-                  return (
-                    <tr key={member.address}>
-                      <td>{shortenAddress(member.address)}</td>
-                      <td>{member.tokenAmount}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+      <DAOMembershipPage
+        memberList={memberList}
+        setIsVoting={setIsVoting}
+        proposals={proposals}
+        tokenModule={tokenModule}
+        address={address}
+        setHasVoted={setHasVoted}
+        voteModule={voteModule}
+        isVoting={isVoting}
+        hasVoted={hasVoted}
+      />
     );
   }
 
@@ -199,6 +239,7 @@ export async function getStaticProps(): Promise<{ props: HomePageProps }> {
     props: {
       bundleDropAddress: process.env.BUNDLE_DROP_ADDRESS || "",
       tokenModuleAddress: process.env.TOKEN_MODULE_ADDRESS || "",
+      voteModuleAddress: process.env.VOTING_MODULE_ADDRESS || "",
     },
   };
 }

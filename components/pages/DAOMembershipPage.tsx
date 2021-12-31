@@ -84,7 +84,7 @@ export function DAOMembershipPage({
                         proposal.proposalId + "-" + vote.type
                       );
 
-                      if (elem?.checked) {
+                      if ((elem as any).checked) {
                         voteResult.vote = vote.type;
                         return;
                       }

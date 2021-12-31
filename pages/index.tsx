@@ -135,10 +135,10 @@ const Home: NextPage<HomePageProps> = ({
   useEffect(() => {
     // We pass the signer to the sdk, which enables us to interact with
     // our deployed contract!
-    sdk.setProviderOrSigner(signer);
+    sdk.setProviderOrSigner(signer as any);
   }, [signer]);
 
-  useEffect(() => {
+  useEffect((): any => {
     // If they don't have an connected wallet, exit!
     if (!address) {
       return;
